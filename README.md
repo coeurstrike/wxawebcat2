@@ -1,297 +1,300 @@
-# AWS Deployment Guide for WebL8.AI
+# WebL8.AI - Intelligent Web Classification System
 
-## 🎯 Recommended: AWS Lightsail (Easiest & Cheapest)
+A production-ready web classification system using IAB 3.0 Taxonomy, powered 100% by OpenAI GPT models.
 
-**Total Cost: ~$10-20/month**
+![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-green.svg)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-AWS Lightsail is the simplest option - it's like a VPS with predictable pricing, no surprise bills, and includes everything you need.
+## 🚀 Features
 
----
+- **FastAPI Web Application** - Modern REST API with interactive documentation
+- **Beautiful Web Interface** - Cybersecurity-themed UI for single and batch classification
+- **PostgreSQL Database** - Persistent storage with caching and staleness detection
+- **Two-Stage Pipeline** - Separate crawler and classifier services for scalability
+- **Customer Management** - API keys, rate limiting, and usage tracking
+- **IAB 3.0 Taxonomy** - Industry-standard classification with 700+ categories
 
-## Option 1: Lightsail Container Service (Easiest)
+## 📋 Architecture
 
-### Cost: ~$10-20/month
-- Nano: $7/month (512 MB RAM, 0.25 vCPU) - Dev/Testing
-- Micro: $10/month (1 GB RAM, 0.5 vCPU) - Small production
-- Small: $20/month (2 GB RAM, 1 vCPU) - Medium production
-
-### Setup Steps
-
-```bash
-# 1. Install AWS CLI and Lightsail plugin
-aws configure
-aws lightsail create-container-service \
-    --service-name wxacat \
-    --power micro \
-    --scale 1
-
-# 2. Build and push your container
-docker build -t wxacat .
-aws lightsail push-container-image \
-    --service-name wxacat \
-    --label wxacat \
-    --image wxacat
-
-# 3. Deploy (see Lightsail console for container config)
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Web/API       │────▶│    Crawler      │────▶│   Classifier    │
+│   (FastAPI)     │     │   (Script 1)    │     │   (Script 2)    │
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │                       │                       │
+         │                       ▼                       │
+         │              ┌─────────────────┐              │
+         │              │  Queue (Files)  │              │
+         │              │  ./data/queue/  │              │
+         │              └─────────────────┘              │
+         │                                               │
+         ▼                                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     PostgreSQL Database                          │
+│  ┌──────────────────┐  ┌──────────────┐  ┌──────────────────┐   │
+│  │ classifications  │  │  customers   │  │   query_log      │   │
+│  └──────────────────┘  └──────────────┘  └──────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Database Options for Lightsail:
-- **SQLite** (Free) - Good for <50K queries/day, file-based
-- **Lightsail PostgreSQL** ($15/month) - Managed, automatic backups
-- **Run PostgreSQL in container** ($0 extra) - Manual management
+## 📁 Project Structure
 
----
-
-## Option 2: Single Lightsail Instance with Docker (Recommended)
-
-### Cost: ~$5-10/month
-
-This is the most cost-effective approach for small-medium workloads.
-
-### Instance Pricing:
-| Plan | RAM | vCPU | Storage | Price |
-|------|-----|------|---------|-------|
-| $3.50 | 512 MB | 1 | 20 GB | Testing only |
-| $5 | 1 GB | 1 | 40 GB | Light production |
-| **$10** | **2 GB** | **1** | **60 GB** | **Recommended** |
-| $20 | 4 GB | 2 | 80 GB | High traffic |
-
-### Step-by-Step Setup
-
-#### 1. Create Lightsail Instance
-
-```bash
-# Via AWS Console:
-# 1. Go to lightsail.aws.amazon.com
-# 2. Create Instance → Linux → Ubuntu 22.04
-# 3. Select $10/month plan (2 GB RAM)
-# 4. Name it "wxacat-server"
-# 5. Create!
+```
+wxacat/
+├── wxacat.conf         # Configuration file
+├── config.py           # Config loader
+├── database.py         # SQLAlchemy models
+├── crawler.py          # Script 1: Web crawler
+├── classifier.py       # Script 2: OpenAI classifier
+├── api.py              # FastAPI application
+├── requirements.txt    # Python dependencies
+├── templates/          # HTML templates
+│   ├── index.html      # Home page
+│   ├── result.html     # Classification result
+│   ├── pending.html    # Pending status
+│   └── batch_result.html
+├── static/             # Static files (CSS, JS)
+└── data/               # Working directories
+    ├── queue/          # Pending crawl jobs
+    ├── processing/     # Currently processing
+    ├── processed/      # Completed jobs
+    └── failed/         # Failed jobs
 ```
 
-#### 2. Connect and Install Docker
+## 🛠️ Installation
+
+### Prerequisites
+
+- Python 3.10+
+- PostgreSQL 15+
+- OpenAI API key
+
+### Setup
 
 ```bash
-# SSH into your instance
-ssh -i ~/.ssh/your-key.pem ubuntu@your-instance-ip
-
-# Install Docker
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker ubuntu
-sudo systemctl enable docker
-
-# Install Docker Compose
-sudo apt install docker-compose-plugin
-
-# Logout and login again for group changes
-exit
-ssh -i ~/.ssh/your-key.pem ubuntu@your-instance-ip
-```
-
-#### 3. Deploy WebL8.AI
-
-```bash
-# Create app directory
-mkdir -p ~/wxacat && cd ~/wxacat
-
-# Upload your files (from local machine)
-scp -i ~/.ssh/your-key.pem -r ./wxacat/* ubuntu@your-instance-ip:~/wxacat/
-
-# Or clone from GitHub
+# Clone the repository
 git clone https://github.com/yourusername/wxacat.git
 cd wxacat
 
-# Create environment file
-cat > .env << EOF
-DB_PASSWORD=your_secure_password_here
-OPENAI_API_KEY=sk-your-openai-key-here
-EOF
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate     # Windows
 
-# Start everything
-docker compose up -d
+# Install dependencies
+pip install -r requirements.txt
 
-# Check status
-docker compose ps
-docker compose logs -f
+# Install Playwright browsers
+python -m playwright install
+
+# Create PostgreSQL database
+createdb wxacat_db
+
+# Configure settings
+cp wxacat.conf.example wxacat.conf
+# Edit wxacat.conf with your settings
 ```
 
-#### 4. Configure Firewall
+### Configuration
+
+Edit `wxacat.conf`:
+
+```ini
+[database]
+host = localhost
+port = 5432
+name = wxacat_db
+user = your_user
+password = your_password
+
+[openai]
+api_key = sk-your-openai-api-key
+
+[cache]
+stale_days = 30
+```
+
+Or use environment variables:
+```bash
+export WXACAT_DATABASE_PASSWORD=your_password
+export WXACAT_OPENAI_API_KEY=sk-your-key
+```
+
+## 🚀 Running the System
+
+### 1. Start the API Server
 
 ```bash
-# In Lightsail Console → Networking tab:
-# Add rule: HTTPS (443)
-# Add rule: Custom TCP 8000 (or use nginx for 80/443)
+python api.py
+# Or with uvicorn
+uvicorn api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-#### 5. (Optional) Setup Domain & SSL
+Access at: http://localhost:8000
+
+### 2. Start the Crawler Service
 
 ```bash
-# Install Nginx and Certbot
-sudo apt install nginx certbot python3-certbot-nginx
+# Process single domain
+python crawler.py example.com
 
-# Configure Nginx
-sudo nano /etc/nginx/sites-available/wxacat
+# Batch from file
+python crawler.py -f urls.txt
+
+# With custom concurrency
+python crawler.py -f urls.txt -c 10
 ```
 
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    location / {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
+### 3. Start the Classifier Service
 
 ```bash
-# Enable site and get SSL
-sudo ln -s /etc/nginx/sites-available/wxacat /etc/nginx/sites-enabled/
-sudo certbot --nginx -d your-domain.com
-sudo systemctl restart nginx
+# Run as daemon (continuous)
+python classifier.py
+
+# Process once and exit
+python classifier.py --once
+
+# Custom poll interval
+python classifier.py --poll-interval 5
 ```
 
----
+## 📡 API Endpoints
 
-## Option 3: AWS Free Tier (First 12 Months Free)
-
-### Cost: $0 for first year, then ~$15-30/month
-
-If you have a new AWS account:
-
-| Service | Free Tier | After Free Tier |
-|---------|-----------|-----------------|
-| EC2 t2.micro | 750 hrs/month | ~$8/month |
-| RDS PostgreSQL | 750 hrs/month | ~$15/month |
-| S3 | 5 GB | ~$0.02/GB |
-
-### Setup with EC2
+### Classification
 
 ```bash
-# 1. Launch EC2 instance (t2.micro or t3.micro)
-# 2. Use Ubuntu 22.04 AMI
-# 3. Configure security group (ports 22, 80, 443, 8000)
-# 4. Follow same Docker setup as Lightsail above
+# Single domain (requires API key)
+curl -X GET "http://localhost:8000/api/v1/classify/example.com" \
+     -H "X-API-Key: wl8_your_api_key"
+
+# Batch classification
+curl -X POST "http://localhost:8000/api/v1/classify/batch" \
+     -H "X-API-Key: wl8_your_api_key" \
+     -H "Content-Type: application/json" \
+     -d '{"domains": ["cnn.com", "espn.com", "github.com"]}'
 ```
 
----
-
-## Option 4: Serverless (Lambda + API Gateway)
-
-### Cost: ~$0-5/month for low traffic
-
-Not recommended for this project because:
-- Playwright/browser crawling doesn't work well in Lambda
-- Cold starts affect response times
-- More complex to set up
-
-Better for: Static API responses, simple functions
-
----
-
-## 📊 Cost Comparison
-
-| Option | Monthly Cost | Setup Difficulty | Best For |
-|--------|--------------|------------------|----------|
-| **Lightsail $10** | **$10** | **Easy** | **Most users** |
-| Lightsail $5 | $5 | Easy | Light usage |
-| Lightsail + DB | $25 | Easy | High reliability |
-| EC2 Free Tier | $0* | Medium | New AWS accounts |
-| EC2 + RDS | $25+ | Medium | Enterprise |
-
-*Free for 12 months
-
----
-
-## 🔧 Production Checklist
-
-### Before Launch:
-- [ ] Change default database password
-- [ ] Set strong OpenAI API key
-- [ ] Configure proper logging
-- [ ] Set up daily backups
-- [ ] Enable Lightsail snapshots ($0.05/GB/month)
-
-### Security:
-- [ ] Use HTTPS (SSL certificate)
-- [ ] Restrict SSH access to your IP
-- [ ] Use strong API keys for customers
-- [ ] Enable CloudWatch monitoring (optional)
-
-### Scaling (if needed later):
-- [ ] Upgrade to larger Lightsail plan (easy resize)
-- [ ] Add Lightsail load balancer ($18/month)
-- [ ] Migrate to ECS/Fargate for auto-scaling
-
----
-
-## 🚀 Quick Start Script
-
-Save this as `deploy.sh` and run on your Lightsail instance:
+### Usage Stats
 
 ```bash
-#!/bin/bash
-set -e
-
-# Configuration
-OPENAI_KEY="sk-your-key-here"
-DB_PASS="your-secure-password"
-
-# Install Docker
-if ! command -v docker &> /dev/null; then
-    curl -fsSL https://get.docker.com | sh
-    sudo usermod -aG docker $USER
-    echo "Docker installed. Please logout/login and run again."
-    exit 0
-fi
-
-# Create project directory
-mkdir -p ~/wxacat && cd ~/wxacat
-
-# Create .env file
-cat > .env << EOF
-DB_PASSWORD=$DB_PASS
-OPENAI_API_KEY=$OPENAI_KEY
-EOF
-
-# Clone or update code
-if [ -d ".git" ]; then
-    git pull
-else
-    git clone https://github.com/yourusername/wxacat.git .
-fi
-
-# Start services
-docker compose down 2>/dev/null || true
-docker compose up -d --build
-
-# Show status
-echo ""
-echo "✅ WebL8.AI is running!"
-echo "   API: http://$(curl -s ifconfig.me):8000"
-echo "   Docs: http://$(curl -s ifconfig.me):8000/api/docs"
-echo ""
-docker compose ps
+curl -X GET "http://localhost:8000/api/v1/usage" \
+     -H "X-API-Key: wl8_your_api_key"
 ```
 
+### Admin (Create Customer)
+
+```bash
+curl -X POST "http://localhost:8000/api/admin/customers" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "company_name": "Acme Corp",
+       "email": "admin@acme.com",
+       "queries_per_day": 1000,
+       "expiration_days": 365
+     }'
+```
+
+## 🗄️ Database Schema
+
+### domain_classifications
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| fqdn | VARCHAR(255) | Domain name (unique, indexed) |
+| url | VARCHAR(2048) | Full URL |
+| title | VARCHAR(512) | Page title |
+| description | TEXT | Meta description |
+| iab_category1 | VARCHAR(50) | Primary IAB category |
+| iab_category2 | VARCHAR(50) | Secondary category |
+| iab_category3 | VARCHAR(50) | Tertiary category |
+| source | VARCHAR(50) | crawl, http_fallback, known |
+| audit_date | TIMESTAMP | Last classification date |
+| is_classified | BOOLEAN | Classification status |
+
+### customers
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| customer_id | VARCHAR(50) | Unique customer ID |
+| api_key | VARCHAR(100) | API key (indexed) |
+| company_name | VARCHAR(255) | Company name |
+| email | VARCHAR(255) | Contact email |
+| queries_per_day | INTEGER | Daily rate limit |
+| queries_used_today | INTEGER | Usage counter |
+| expiration_date | DATE | Account expiration |
+| is_active | BOOLEAN | Account status |
+
+### query_log
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| customer_id | VARCHAR(50) | Customer reference |
+| fqdn | VARCHAR(255) | Queried domain |
+| query_time | TIMESTAMP | Query timestamp |
+| response_time_ms | INTEGER | Response time |
+| cache_hit | BOOLEAN | Cache hit flag |
+
+## ⚙️ Configuration Reference
+
+### wxacat.conf sections
+
+| Section | Key | Default | Description |
+|---------|-----|---------|-------------|
+| database | host | localhost | PostgreSQL host |
+| database | port | 5432 | PostgreSQL port |
+| database | name | wxacat_db | Database name |
+| cache | stale_days | 30 | Days before refresh |
+| crawler | concurrency | 5 | Parallel crawlers |
+| classifier | poll_interval | 10 | Queue poll seconds |
+| openai | model | gpt-4o-mini | OpenAI model |
+| api | port | 8000 | API server port |
+
+## 🔄 Workflow
+
+1. **Request** arrives via API or Web UI
+2. **Check Database** for cached classification
+   - If fresh: return immediately
+   - If stale or missing: queue for crawling
+3. **Crawler** picks up queued domains
+   - Fetches page with stealth browser
+   - Extracts metadata, headings, content
+   - Saves to queue directory
+4. **Classifier** monitors queue
+   - Reads crawled data
+   - Classifies with OpenAI
+   - Saves to PostgreSQL
+   - Moves files to processed/
+
+## 🛡️ Security
+
+- API key authentication required
+- Rate limiting per customer
+- Query logging for audit
+- Environment variable support for secrets
+
+## 📈 Scaling
+
+For high-volume deployments:
+
+1. **Multiple Crawler Instances** - Run on different machines
+2. **Multiple Classifier Instances** - Process queue in parallel
+3. **Redis Queue** - Replace file-based queue
+4. **Read Replicas** - For PostgreSQL reads
+5. **CDN/Cache** - For static assets
+
+## 🤝 Contributing
+
+Contributions welcome! Please read our contributing guidelines.
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
 ---
 
-## 💡 Tips
-
-1. **Start small** - $10 Lightsail handles most use cases
-2. **Use SQLite first** - Simpler, no extra cost, migrate to PostgreSQL later if needed
-3. **Enable snapshots** - $1-2/month for peace of mind
-4. **Monitor costs** - Set up billing alerts in AWS Console
-
----
-
-## Need More Scale?
-
-For 100K+ queries/day, consider:
-- Multiple Lightsail instances with load balancer
-- AWS ECS with Fargate
-- Dedicated RDS PostgreSQL instance
-
-Contact us for enterprise deployment assistance.
+Built with ❤️ by WebL8.AI
